@@ -1,0 +1,84 @@
+on:
+  push:
+  pull_request:
+
+name: Release
+
+jobs:
+  release:
+    name: Test & (release)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target_name: lunatic
+            asset_name: lunatic-linux-amd64.tar.gz
+            content_type: application/gzip
+          - os: macos-11
+            target_name: lunatic
+            asset_name: lunatic-macos-universal.tar.gz
+            content_type: application/gzip
+          - os: windows-latest
+            target_name: lunatic.exe
+            asset_name: lunatic-windows-amd64.zip
+            content_type: application/zip
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+      - name: Install latest Rust
+        if: runner.os != 'macOS'
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          components: rustfmt, clippy
+      - name: Install latest Rust with an additional AArch64 target on macOS
+        if: runner.os == 'macOS'
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: aarch64-apple-darwin
+          override: true
+          components: rustfmt, clippy
+      # Rust builds can take some time, cache them.
+      - uses: Swatinem/rust-cache@v1
+      - name: "Run clippy check"
+        run: cargo clippy -- -D warnings
+      - name: "Check formatting"
+        run: cargo fmt -- --check
+
+      # Create a release:
+      # - The next steps will only run if a tag was added during the push
+      - name: Build project on Linux and Windows
+        if: startsWith(github.ref, 'refs/tags/') && runner.os != 'macOS'
+        run: |
+          cargo build --release
+          mv ./target/release/${{ matrix.target_name }} ${{ matrix.target_name }}
+      - name: Build project on macOs and package into universal binary
+        if: startsWith(github.ref, 'refs/tags/') && runner.os == 'macOS'
+        run: |
+          cargo build --release --target x86_64-apple-darwin
+          cargo build --release --target aarch64-apple-darwin
+          lipo -create -output lunatic target/aarch64-apple-darwin/release/lunatic target/x86_64-apple-darwin/release/lunatic
+      - name: Tar release on Unix
+        if: startsWith(github.ref, 'refs/tags/') && runner.os != 'Windows'
+        run: tar czf ${{ matrix.asset_name }} README.md LICENSE-MIT LICENSE-APACHE ${{ matrix.target_name }}
+      - name: Zip release on Windows
+        if: startsWith(github.ref, 'refs/tags/') && runner.os == 'Windows'
+        uses: vimtor/action-zip@v1
+        with:
+          files: README.md LICENSE-MIT LICENSE-APACHE ${{ matrix.target_name }}
+          dest: ${{ matrix.asset_name }}
+      - name: Get release name
+        if: startsWith(github.ref, 'refs/tags/')
+        id: getReleaseName
+        run: echo ::set-output name=RELEASE_NAME::${GITHUB_REF/refs\/tags\//}
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.getReleaseName.outputs.RELEASE_NAME }}
+          name: Release ${{ steps.getReleaseName.outputs.RELEASE_NAME }}
+          draft: true
+          files: ${{ matrix.asset_name }}
