@@ -6,7 +6,7 @@ name: Release
 
 jobs:
   release:
-    name: Test & (release)
+    name: Release
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -63,12 +63,12 @@ jobs:
           lipo -create -output ecs-task-secret target/aarch64-apple-darwin/release/ecs-task-secret target/x86_64-apple-darwin/release/ecs-task-secret
       - name: Tar release on Unix
         if: startsWith(github.ref, 'refs/tags/v') && runner.os != 'Windows'
-        run: tar czf ${{ matrix.asset_name }} README.md LICENSE-MIT LICENSE-APACHE ${{ matrix.target_name }}
+        run: tar czf ${{ matrix.asset_name }} README.md ${{ matrix.target_name }}
       - name: Zip release on Windows
         if: startsWith(github.ref, 'refs/tags/v') && runner.os == 'Windows'
         uses: vimtor/action-zip@v1
         with:
-          files: README.md LICENSE-MIT LICENSE-APACHE ${{ matrix.target_name }}
+          files: README.md ${{ matrix.target_name }}
           dest: ${{ matrix.asset_name }}
       - name: Get release name
         if: startsWith(github.ref, 'refs/tags/v')
